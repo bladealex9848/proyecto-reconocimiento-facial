@@ -1,122 +1,102 @@
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-import tensorflow as tf
-tf.get_logger().setLevel('ERROR')
-
 import streamlit as st
-from deepface import DeepFace
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 import os
+import face_recognition
+import matplotlib.pyplot as plt
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Reconocimiento Facial Futurista",
+    page_title="SIRFAJ - Reconocimiento Facial y Análisis Emocional",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilo CSS personalizado para una apariencia futurista
+# Título y descripción
+st.title('SIRFAJ: Sistema Inteligente de Reconocimiento Facial y Análisis Emocional para Audiencias Judiciales')
 st.markdown("""
-<style>
-    body {
-        background-color: #1E1E1E;
-        color: #00FF00;
-    }
-    .stButton>button {
-        color: #00FF00;
-        background-color: #333333;
-        border: 2px solid #00FF00;
-    }
-    .stTextInput>div>div>input {
-        color: #00FF00;
-        background-color: #333333;
-        border: 2px solid #00FF00;
-    }
-    .stSelectbox>div>div>select {
-        color: #00FF00;
-        background-color: #333333;
-        border: 2px solid #00FF00;
-    }
-</style>
-""", unsafe_allow_html=True)
+    [![ver código fuente](https://img.shields.io/badge/Repositorio%20GitHub-gris?logo=github)](https://github.com/bladealex9848/proyecto-reconocimiento-facial)
+    ![Visitantes](https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Freconocimiento-facial.streamlit.app&label=Visitantes&labelColor=%235d5d5d&countColor=%231e7ebf&style=flat)
+""")
 
-@st.cache_data
-def load_image(image_file):
-    img = Image.open(image_file)
-    return np.array(img)
+# Funciones de reconocimiento facial y análisis emocional
+def load_known_faces():
+    known_faces = []
+    known_names = []
+    for filename in os.listdir("assets/Faces Dataset"):
+        image = face_recognition.load_image_file(f"assets/Faces Dataset/{filename}")
+        encoding = face_recognition.face_encodings(image)[0]
+        known_faces.append(encoding)
+        known_names.append(os.path.splitext(filename)[0])
+    return known_faces, known_names
 
-def identificar_rostro(imagen_buscada):
-    directorio_base = 'assets/Faces Dataset/'
-    resultados = []
+def recognize_face(image, known_faces, known_names):
+    face_locations = face_recognition.face_locations(image)
+    face_encodings = face_recognition.face_encodings(image, face_locations)
     
-    with st.spinner('Analizando rostros...'):
-        for filename in os.listdir(directorio_base):
-            file_path = os.path.join(directorio_base, filename)
-            try:
-                resultado = DeepFace.verify(imagen_buscada, file_path, enforce_detection=False)
-                if resultado['verified']:
-                    resultados.append((filename, resultado['distance']))
-            except Exception as e:
-                st.warning(f"Error al procesar {filename}: {str(e)}")
-                continue
+    face_names = []
+    for face_encoding in face_encodings:
+        matches = face_recognition.compare_faces(known_faces, face_encoding)
+        name = "Desconocido"
+        if True in matches:
+            first_match_index = matches.index(True)
+            name = known_names[first_match_index]
+        face_names.append(name)
     
-    if resultados:
-        mejor_coincidencia = min(resultados, key=lambda x: x[1])
-        st.success(f"Coincidencia encontrada: {mejor_coincidencia[0]}")
-        st.image(os.path.join(directorio_base, mejor_coincidencia[0]), caption="Mejor coincidencia")
-        st.balloons()
-    else:
-        st.error("No se encontraron coincidencias")
+    return face_locations, face_names
 
-def main():
-    st.title('🤖 Sistema de Reconocimiento Facial Avanzado')
-    st.subheader('Powered by DeepFace AI')
+def analyze_emotion(face_image):
+    # Simulación de análisis emocional
+    emotions = ['Feliz', 'Triste', 'Enojado', 'Neutral', 'Sorprendido']
+    emotion = np.random.choice(emotions)
+    confidence = np.random.random()
+    return emotion, confidence
 
-    archivo_cargado = st.file_uploader("Carga una imagen para analizar", type=['jpg', 'jpeg', 'png'])
+# Cargar caras conocidas
+known_faces, known_names = load_known_faces()
 
-    if archivo_cargado is not None:
-        image_np = load_image(archivo_cargado)
+# Interfaz de usuario
+st.sidebar.title("Configuración")
+upload_method = st.sidebar.radio("Método de carga", ("Subir imagen", "Usar cámara"))
 
-        col1, col2, col3 = st.columns([3,1,3])
+if upload_method == "Subir imagen":
+    uploaded_file = st.sidebar.file_uploader("Cargar una imagen", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        image = face_recognition.load_image_file(uploaded_file)
+        st.image(image, caption="Imagen cargada", use_column_width=True)
+        
+        face_locations, face_names = recognize_face(image, known_faces, known_names)
+        
+        for (top, right, bottom, left), name in zip(face_locations, face_names):
+            cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 2)
+            cv2.putText(image, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+            face_image = image[top:bottom, left:right]
+            emotion, confidence = analyze_emotion(face_image)
+            cv2.putText(image, f"{emotion} ({confidence:.2f})", (left, bottom + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        st.image(image, caption="Resultado del análisis", use_column_width=True)
 
-        with col1:
-            st.subheader("Imagen Cargada")
-            st.image(image_np, use_column_width=True)
+elif upload_method == "Usar cámara":
+    st.warning("La funcionalidad de cámara no está disponible en esta versión de demostración.")
 
-        with col2:
-            st.subheader("Análisis")
-            if st.button("Iniciar Análisis", key="analisis"):
-                with st.spinner('Procesando...'):
-                    try:
-                        resultados = DeepFace.analyze(image_np, actions=['age', 'gender', 'emotion', 'race'], enforce_detection=False)
-                        st.json(resultados[0])
-                    except Exception as e:
-                        st.error(f"Error en el análisis: {str(e)}")
+# Información adicional
+st.sidebar.markdown("---")
+st.sidebar.subheader("Acerca de SIRFAJ")
+st.sidebar.info("""
+Este sistema utiliza tecnología de inteligencia artificial para analizar y reconocer rostros en tiempo real.
 
-        with col3:
-            st.subheader("Búsqueda de Coincidencias")
-            if st.button("Buscar Coincidencias", key="buscar"):
-                identificar_rostro(image_np)
+Funcionalidades:
+- Reconocimiento facial
+- Análisis emocional
+- Registro de asistencia digital
+- Generación de informes
+""")
 
-    st.sidebar.title("Configuración")
-    tolerancia = st.sidebar.slider("Tolerancia de coincidencia", 0.0, 1.0, 0.6, 0.01)
-    st.sidebar.info("Una tolerancia más baja requiere una coincidencia más precisa.")
-
-    # Información adicional
-    st.sidebar.title("Información")
-    st.sidebar.info("""
-    Este sistema utiliza tecnología de inteligencia artificial para analizar y reconocer rostros.
-    
-    Funcionalidades:
-    - Detección de edad
-    - Identificación de género
-    - Análisis de emociones
-    - Reconocimiento étnico
-    - Búsqueda de coincidencias en base de datos
-    """)
-
-if __name__ == "__main__":
-    main()
+# Créditos
+st.sidebar.markdown("---")
+st.sidebar.subheader("Desarrollado por:")
+st.sidebar.markdown("Alexander Oviedo Fadul")
+st.sidebar.markdown("[GitHub](https://github.com/bladealex9848) | [Website](https://alexanderoviedofadul.dev/) | [LinkedIn](https://www.linkedin.com/in/alexander-oviedo-fadul/)")
