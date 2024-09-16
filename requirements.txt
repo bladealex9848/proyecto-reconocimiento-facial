@@ -1,4 +1,5 @@
 streamlit
 opencv-python-headless
+dlib-binary
 face_recognition
 Pillow
