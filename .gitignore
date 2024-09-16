@@ -1,0 +1,75 @@
+# Entornos virtuales
+venv/
+env/
+.env
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de distribución / empaquetado
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+*.so
+
+# Archivos de Jupyter Notebook
+.ipynb_checkpoints
+
+# Archivos específicos de Streamlit
+.streamlit/
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos de log
+*.log
+
+# Archivos de base de datos
+*.db
+*.sqlite3
+
+# Directorios de datos (ajusta según tus necesidades)
+data/
+# assets/Celebrity Faces Dataset/
+
+# Archivos de ambiente
+.env
+.env.local
+
+# Archivos temporales
+*.tmp
+
+# Archivos de resultados o salidas generadas
+output/
+results/
+
+# Archivos grandes (ajusta según tus necesidades)
+*.zip
+*.tar.gz
+*.rar
+
+# Archivos específicos de tu proyecto (ajusta según tus necesidades)
+# config.ini
+# secrets.json
+
+# Archivos y directorios específicos de DeepFace
+.deepface/

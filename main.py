@@ -1,3 +1,8 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import tensorflow as tf
+tf.get_logger().setLevel('ERROR')
+
 import streamlit as st
 from deepface import DeepFace
 import cv2
@@ -38,6 +43,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+@st.cache_data
+def load_image(image_file):
+    img = Image.open(image_file)
+    return np.array(img)
+
 def identificar_rostro(imagen_buscada):
     directorio_base = 'assets/Celebrity Faces Dataset/'
     resultados = []
@@ -46,11 +56,12 @@ def identificar_rostro(imagen_buscada):
         for filename in os.listdir(directorio_base):
             file_path = os.path.join(directorio_base, filename)
             try:
-                resultado = DeepFace.verify(imagen_buscada, file_path)
+                resultado = DeepFace.verify(imagen_buscada, file_path, enforce_detection=False)
                 if resultado['verified']:
                     resultados.append((filename, resultado['distance']))
-            except:
-                pass
+            except Exception as e:
+                st.warning(f"Error al procesar {filename}: {str(e)}")
+                continue
     
     if resultados:
         mejor_coincidencia = min(resultados, key=lambda x: x[1])
@@ -67,22 +78,20 @@ def main():
     archivo_cargado = st.file_uploader("Carga una imagen para analizar", type=['jpg', 'jpeg', 'png'])
 
     if archivo_cargado is not None:
-        bytes_data = archivo_cargado.getvalue()
-        image = Image.open(archivo_cargado)
-        image_np = np.array(image)
+        image_np = load_image(archivo_cargado)
 
         col1, col2, col3 = st.columns([3,1,3])
 
         with col1:
             st.subheader("Imagen Cargada")
-            st.image(image, use_column_width=True)
+            st.image(image_np, use_column_width=True)
 
         with col2:
             st.subheader("Análisis")
             if st.button("Iniciar Análisis", key="analisis"):
                 with st.spinner('Procesando...'):
                     try:
-                        resultados = DeepFace.analyze(image_np, actions=['age', 'gender', 'emotion', 'race'])
+                        resultados = DeepFace.analyze(image_np, actions=['age', 'gender', 'emotion', 'race'], enforce_detection=False)
                         st.json(resultados[0])
                     except Exception as e:
                         st.error(f"Error en el análisis: {str(e)}")
