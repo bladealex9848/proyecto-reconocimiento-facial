@@ -49,7 +49,7 @@ def load_image(image_file):
     return np.array(img)
 
 def identificar_rostro(imagen_buscada):
-    directorio_base = 'assets/Celebrity Faces Dataset/'
+    directorio_base = 'assets/Faces Dataset/'
     resultados = []
     
     with st.spinner('Analizando rostros...'):
