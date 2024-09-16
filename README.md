@@ -57,10 +57,13 @@ SIRFAJ se alinea perfectamente con los objetivos del Concurso de Innovación de 
 ```
 proyecto-reconocimiento-facial/
 │
-├── main.py                            # Archivo principal de la aplicación
-├── requirements.txt                   # Dependencias del proyecto
-├── assets/Faces Dataset/              # Directorio que contiene imágenes de rostros
-└── README.md                          # Documentación del proyecto (este archivo)
+├── main.py
+├── requirements.txt
+├── README.md
+└── models/
+    ├── deploy.prototxt
+    ├── res10_300x300_ssd_iter_140000.caffemodel
+    └── modelFEC.h5
 ```
 
 ## Requisitos Previos

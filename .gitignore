@@ -1,76 +1,65 @@
+# Archivos y directorios específicos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Entornos virtuales
 venv/
 env/
 .env
 
-# Archivos de caché de Python
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Archivos de distribución / empaquetado
-*.egg
-*.egg-info/
-dist/
-build/
-eggs/
-parts/
-var/
-sdist/
-develop-eggs/
-.installed.cfg
-lib/
-lib64/
-*.so
-
-# Archivos de Jupyter Notebook
-.ipynb_checkpoints
-
-# Archivos específicos de Streamlit
-.streamlit/
+# Archivos de configuración de IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # Archivos de sistema operativo
 .DS_Store
 Thumbs.db
 
-# Archivos de IDE y editores
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Archivos de log
+# Archivos de registro
 *.log
+
+# Directorios de salida
+output/
+results/
+
+# Archivos de caché de Streamlit
+.streamlit/
+
+# Archivos de modelo (si son demasiado grandes para GitHub)
+# models/*.h5
+# models/*.caffemodel
+
+# Archivos de datos (si son demasiado grandes o contienen información sensible)
+data/
+
+# Archivos temporales
+*.tmp
+
+# Archivos de dependencias
+node_modules/
+
+# Archivos de compilación
+*.so
+
+# Archivos de distribución
+dist/
+build/
+*.egg-info/
+
+# Archivos de configuración local
+config.ini
+secrets.json
 
 # Archivos de base de datos
 *.db
 *.sqlite3
 
-# Directorios de datos (ajusta según tus necesidades)
-data/
-# assets/Celebrity Faces Dataset/
+# Archivos de respaldo
+*.bak
 
-# Archivos de ambiente
-.env
-.env.local
-
-# Archivos temporales
-*.tmp
-
-# Archivos de resultados o salidas generadas
-output/
-results/
-
-# Archivos grandes (ajusta según tus necesidades)
-*.zip
-*.tar.gz
-*.rar
-
-# Archivos específicos de tu proyecto (ajusta según tus necesidades)
-# config.ini
-# secrets.json
-
-# Archivos y directorios específicos de DeepFace
-.deepface/
-*.pyc
+# Directorios y archivos específicos del proyecto (ajusta según sea necesario)
+# project_specific_file.txt
+# project_specific_directory/
