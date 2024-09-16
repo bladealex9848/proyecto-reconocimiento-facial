@@ -5,3 +5,4 @@ libsm6
 libxext6
 libxrender-dev
 libxrender1
+libopencv-dev

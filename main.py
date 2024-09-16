@@ -60,8 +60,8 @@ def detect_faces(image):
         return face_recognition.face_locations(image)
     return []
 
-def analyze_emotion(face_image):
-    if tensorflow_available:
+def analyze_emotion(face_image, emotionModel):
+    if tensorflow_available and emotionModel is not None:
         face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
         face_image = cv2.resize(face_image, (48, 48))
         face_image = np.expand_dims(face_image, axis=[0, -1])
@@ -104,7 +104,7 @@ if mode == "Imagen":
             st.subheader("Análisis Emocional")
             for (top, right, bottom, left) in faces:
                 face_image = img_array[top:bottom, left:right]
-                emotion, confidence = analyze_emotion(face_image)
+                emotion, confidence = analyze_emotion(face_image, emotionModel)
                 st.write(f"Emoción: {emotion} (Confianza: {confidence:.2f})")
 
 elif mode == "Cámara Web":
