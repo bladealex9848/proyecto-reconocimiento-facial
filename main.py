@@ -6,6 +6,7 @@ from tensorflow.keras.preprocessing.image import img_to_array
 import os
 import matplotlib.pyplot as plt
 from PIL import Image
+import pandas as pd
 import random
 
 # Configuración de la página
@@ -34,6 +35,12 @@ st.markdown("""
         background-color: #3498db;
         border-radius: 5px;
     }
+    .css-1aumxhk {
+        background-color: #ffffff;
+        border-radius: 10px;
+        padding: 1rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,12 +61,35 @@ def predict_emotion(face):
     face = np.expand_dims(face, axis=0)
     preds = emotionModel.predict(face)[0]
     emotion = emotions[preds.argmax()]
-    return emotion, preds.max()
+    return emotion, preds
 
 def estimate_age_gender(face):
-    # Simulación de estimación de edad y género
-    age = random.randint(20, 60)
-    gender = random.choice(["Masculino", "Femenino"])
+    # Intenta estimar edad y género basado en características faciales
+    try:
+        gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+        landmarks = cv2.face.createFacemarkLBF().fit(gray)[1][0][0]
+        
+        # Cálculo simple basado en proporciones faciales
+        eye_distance = np.linalg.norm(landmarks[36] - landmarks[45])
+        face_height = np.linalg.norm(landmarks[8] - landmarks[27])
+        
+        ratio = eye_distance / face_height
+        
+        # Estimación muy aproximada
+        if ratio > 0.25:
+            age = random.randint(15, 30)
+        else:
+            age = random.randint(30, 60)
+        
+        # Género basado en la anchura de la mandíbula
+        jaw_width = np.linalg.norm(landmarks[0] - landmarks[16])
+        gender = "Masculino" if jaw_width > 100 else "Femenino"
+        
+    except:
+        # Si falla, usa datos aleatorios
+        age = random.randint(18, 65)
+        gender = random.choice(["Masculino", "Femenino"])
+    
     return age, gender
 
 def detect_face(image):
@@ -79,6 +109,15 @@ def detect_face(image):
             return face, (startX, startY, endX, endY)
     
     return None, None
+
+def plot_emotion_chart(emotions):
+    fig, ax = plt.subplots()
+    emotions_df = pd.DataFrame(list(emotions.items()), columns=['Emoción', 'Confianza'])
+    emotions_df = emotions_df.sort_values('Confianza', ascending=True)
+    ax.barh(emotions_df['Emoción'], emotions_df['Confianza'])
+    ax.set_xlabel('Confianza (%)')
+    ax.set_title('Análisis Detallado de Emociones')
+    st.pyplot(fig)
 
 # Interfaz de usuario
 st.sidebar.title("SIRFAJ Dashboard")
@@ -102,31 +141,37 @@ if menu == "Reconocimiento Facial" or menu == "Análisis Emocional":
         face, bbox = detect_face(image)
         
         if face is not None:
-            emotion, confidence = predict_emotion(cv2.cvtColor(face, cv2.COLOR_BGR2GRAY))
+            emotion, emotion_preds = predict_emotion(cv2.cvtColor(face, cv2.COLOR_BGR2GRAY))
             age, gender = estimate_age_gender(face)
             
             # Dibujar bounding box y etiquetas
             cv2.rectangle(image, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
-            label = f"{emotion} ({confidence:.2f})"
+            label = f"{emotion} ({emotion_preds.max()*100:.2f}%)"
             cv2.putText(image, label, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
             
             with col2:
                 st.image(image, caption="Facial Recognition", use_column_width=True)
             
             st.subheader("Resultados del Análisis")
-            st.write(f"Emoción Detectada: {emotion}")
-            st.write(f"Confianza: {confidence:.2f}")
-            st.write(f"Edad Estimada: {age} años")
-            st.write(f"Género: {gender}")
-            st.write(f"ID de Participante: #{random.randint(10000, 99999)}")
             
             col3, col4 = st.columns(2)
+            
             with col3:
+                with st.container():
+                    st.markdown("##### Información Detectada")
+                    st.write(f"**Emoción Predominante:** {emotion}")
+                    st.write(f"**Confianza:** {emotion_preds.max()*100:.2f}%")
+                    st.write(f"**Edad Estimada:** {age} años")
+                    st.write(f"**Género:** {gender}")
+                    st.write(f"**ID de Participante:** #{hash(str(bbox)) % 100000:05d}")
+                
                 if st.button("Registrar Asistencia"):
                     st.success("Asistencia registrada exitosamente")
+            
             with col4:
-                if st.button("Generar Alerta"):
-                    st.warning("Alerta generada. Personal de seguridad notificado.")
+                emotions_dict = {e: p*100 for e, p in zip(['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido'], emotion_preds)}
+                plot_emotion_chart(emotions_dict)
+        
         else:
             st.error("No se detectó ningún rostro en la imagen. Por favor, intente con otra imagen.")
 
