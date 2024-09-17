@@ -1,27 +1,10 @@
 import streamlit as st
 import cv2
 import numpy as np
-from PIL import Image
-import pandas as pd
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import img_to_array
+import os
 import matplotlib.pyplot as plt
-import io
-import time
-
-# Intentar importar bibliotecas opcionales
-try:
-    import face_recognition
-    face_recognition_available = True
-except ImportError:
-    face_recognition_available = False
-    st.warning("La biblioteca face_recognition no está disponible. Algunas funcionalidades estarán limitadas.")
-
-try:
-    import tensorflow as tf
-    from tensorflow.keras.models import load_model
-    tensorflow_available = True
-except ImportError:
-    tensorflow_available = False
-    st.warning("La biblioteca TensorFlow no está disponible. El análisis emocional no estará disponible.")
 
 # Configuración de la página
 st.set_page_config(
@@ -46,105 +29,72 @@ st.markdown("""
 # Funciones de utilidad
 @st.cache_resource
 def load_models():
-    if face_recognition_available and tensorflow_available:
-        try:
-            faceNet = cv2.dnn.readNet("models/deploy.prototxt", "models/res10_300x300_ssd_iter_140000.caffemodel")
-            emotionModel = load_model("models/modelFEC.h5")
-            return faceNet, emotionModel
-        except Exception as e:
-            st.error(f"Error al cargar los modelos: {e}")
-    return None, None
+    faceNet = cv2.dnn.readNet("models/deploy.prototxt", "models/res10_300x300_ssd_iter_140000.caffemodel")
+    emotionModel = load_model("models/modelFEC.h5")
+    return faceNet, emotionModel
 
-def detect_faces(image):
-    if face_recognition_available:
-        return face_recognition.face_locations(image)
-    return []
-
-def analyze_emotion(face_image, emotionModel):
-    if tensorflow_available and emotionModel is not None:
-        face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-        face_image = cv2.resize(face_image, (48, 48))
-        face_image = np.expand_dims(face_image, axis=[0, -1])
-        
-        emotion_labels = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
-        emotion_probs = emotionModel.predict(face_image)[0]
-        emotion = emotion_labels[np.argmax(emotion_probs)]
-        return emotion, max(emotion_probs)
-    return "No disponible", 0
-
-# Carga de modelos
 faceNet, emotionModel = load_models()
 
-# Interfaz de usuario principal
-st.title('SIRFAJ: Sistema Inteligente de Reconocimiento Facial y Análisis Emocional')
-
-# Selector de modo
-mode = st.sidebar.selectbox("Seleccione el modo", ["Imagen", "Cámara Web"])
-
-if mode == "Imagen":
-    uploaded_file = st.file_uploader("Cargar una imagen", type=["jpg", "jpeg", "png"])
+# Función para predecir la emoción
+def predict_emotion(frame, faceNet, emotionModel):
+    classes = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
+    blob = cv2.dnn.blobFromImage(frame, 1.0, (224, 224), (104.0, 177.0, 123.0))
+    faceNet.setInput(blob)
+    detections = faceNet.forward()
     
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Imagen cargada", use_column_width=True)
-        
-        # Procesar imagen
-        img_array = np.array(image)
-        faces = detect_faces(img_array)
-        
-        # Mostrar resultados
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Detección Facial")
-            for (top, right, bottom, left) in faces:
-                cv2.rectangle(img_array, (left, top), (right, bottom), (0, 255, 0), 2)
-            st.image(img_array, channels="RGB")
-        
-        with col2:
-            st.subheader("Análisis Emocional")
-            for (top, right, bottom, left) in faces:
-                face_image = img_array[top:bottom, left:right]
-                emotion, confidence = analyze_emotion(face_image, emotionModel)
-                st.write(f"Emoción: {emotion} (Confianza: {confidence:.2f})")
+    faces = []
+    locs = []
+    preds = []
+    
+    for i in range(0, detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > 0.4:
+            box = detections[0, 0, i, 3:7] * np.array([frame.shape[1], frame.shape[0], frame.shape[1], frame.shape[0]])
+            (Xi, Yi, Xf, Yf) = box.astype("int")
+            face = frame[Yi:Yf, Xi:Xf]
+            face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+            face = cv2.resize(face, (48, 48))
+            face = img_to_array(face)
+            face = np.expand_dims(face, axis=0)
+            
+            pred = emotionModel.predict(face)[0]
+            label = classes[pred.argmax()]
+            
+            faces.append(face)
+            locs.append((Xi, Yi, Xf, Yf))
+            preds.append((label, pred))
+    
+    return locs, preds
 
-elif mode == "Cámara Web":
-    st.warning("La funcionalidad de cámara web no está disponible en esta versión de demostración.")
+# Interfaz de usuario
+uploaded_file = st.file_uploader("Cargar una imagen", type=["jpg", "jpeg", "png"])
 
-# Visualización con Matplotlib
-st.header("Estadísticas de Emociones")
+if uploaded_file is not None:
+    image = cv2.imdecode(np.frombuffer(uploaded_file.read(), np.uint8), 1)
+    st.image(image, caption="Imagen cargada", use_column_width=True)
+    
+    locs, preds = predict_emotion(image, faceNet, emotionModel)
+    
+    for (box, (label, pred)) in zip(locs, preds):
+        (Xi, Yi, Xf, Yf) = box
+        cv2.rectangle(image, (Xi, Yi), (Xf, Yf), (0, 255, 0), 2)
+        cv2.putText(image, f"{label}: {pred.max():.2f}", (Xi, Yi - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+    
+    st.image(image, caption="Emociones detectadas", use_column_width=True)
+    
+    # Gráfico de barras para las emociones
+    if preds:
+        fig, ax = plt.subplots()
+        emotions = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
+        values = preds[0][1]
+        ax.bar(emotions, values)
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        st.pyplot(fig)
 
-# Datos de ejemplo (reemplazar con datos reales cuando estén disponibles)
-emotions = ['Feliz', 'Triste', 'Enojado', 'Neutral', 'Sorprendido']
-counts = [30, 10, 5, 40, 15]
-
-fig, ax = plt.subplots()
-ax.bar(emotions, counts)
-ax.set_ylabel('Cantidad')
-ax.set_title('Distribución de Emociones Detectadas')
-plt.xticks(rotation=45)
-st.pyplot(fig)
-
-# Métricas en tiempo real
-st.header("Métricas en Tiempo Real")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    faces_detected = st.empty()
-with col2:
-    emotions_analyzed = st.empty()
-with col3:
-    processing_time = st.empty()
-
-# Simulación de métricas en tiempo real (reemplazar con datos reales)
-for _ in range(10):  # Limitamos a 10 iteraciones para evitar bucles infinitos en Streamlit Cloud
-    faces_detected.metric("Rostros Detectados", np.random.randint(1, 10))
-    emotions_analyzed.metric("Emociones Analizadas", np.random.randint(1, 10))
-    processing_time.metric("Tiempo de Procesamiento", f"{np.random.rand():.2f} s")
-    time.sleep(1)
-
-# Información adicional
-st.sidebar.markdown("---")
-st.sidebar.subheader("Acerca de SIRFAJ")
+# Información del sistema
+st.sidebar.title("Información del Sistema")
 st.sidebar.info("""
 Este sistema utiliza tecnología de inteligencia artificial para analizar y reconocer rostros en tiempo real.
 
