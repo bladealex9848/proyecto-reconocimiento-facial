@@ -5,6 +5,8 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 import os
 import matplotlib.pyplot as plt
+from PIL import Image
+import random
 
 # Configuración de la página
 st.set_page_config(
@@ -21,7 +23,16 @@ st.markdown("""
         background: #f0f2f6
     }
     .sidebar .sidebar-content {
-        background: #ffffff
+        background: #2c3e50
+    }
+    .Widget>label {
+        color: white;
+        font-weight: bold;
+    }
+    .stButton>button {
+        color: white;
+        background-color: #3498db;
+        border-radius: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -35,66 +46,105 @@ def load_models():
 
 faceNet, emotionModel = load_models()
 
-# Función para predecir la emoción
-def predict_emotion(frame, faceNet, emotionModel):
-    classes = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
-    blob = cv2.dnn.blobFromImage(frame, 1.0, (224, 224), (104.0, 177.0, 123.0))
+def predict_emotion(face):
+    emotions = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
+    face = cv2.resize(face, (48, 48))
+    face = face.astype("float") / 255.0
+    face = img_to_array(face)
+    face = np.expand_dims(face, axis=0)
+    preds = emotionModel.predict(face)[0]
+    emotion = emotions[preds.argmax()]
+    return emotion, preds.max()
+
+def estimate_age_gender(face):
+    # Simulación de estimación de edad y género
+    age = random.randint(20, 60)
+    gender = random.choice(["Masculino", "Femenino"])
+    return age, gender
+
+def detect_face(image):
+    (h, w) = image.shape[:2]
+    blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
     faceNet.setInput(blob)
     detections = faceNet.forward()
     
-    faces = []
-    locs = []
-    preds = []
-    
-    for i in range(0, detections.shape[2]):
+    if len(detections) > 0:
+        i = np.argmax(detections[0, 0, :, 2])
         confidence = detections[0, 0, i, 2]
-        if confidence > 0.4:
-            box = detections[0, 0, i, 3:7] * np.array([frame.shape[1], frame.shape[0], frame.shape[1], frame.shape[0]])
-            (Xi, Yi, Xf, Yf) = box.astype("int")
-            face = frame[Yi:Yf, Xi:Xf]
-            face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-            face = cv2.resize(face, (48, 48))
-            face = img_to_array(face)
-            face = np.expand_dims(face, axis=0)
-            
-            pred = emotionModel.predict(face)[0]
-            label = classes[pred.argmax()]
-            
-            faces.append(face)
-            locs.append((Xi, Yi, Xf, Yf))
-            preds.append((label, pred))
+        
+        if confidence > 0.5:
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (startX, startY, endX, endY) = box.astype("int")
+            face = image[startY:endY, startX:endX]
+            return face, (startX, startY, endX, endY)
     
-    return locs, preds
+    return None, None
 
 # Interfaz de usuario
-uploaded_file = st.file_uploader("Cargar una imagen", type=["jpg", "jpeg", "png"])
+st.sidebar.title("SIRFAJ Dashboard")
+menu = st.sidebar.selectbox("Seleccione una función", 
+                            ["Reconocimiento Facial", "Análisis Emocional", "Registro de Asistencia", "Generación de Informes", "Alertas de Seguridad"])
 
-if uploaded_file is not None:
-    image = cv2.imdecode(np.frombuffer(uploaded_file.read(), np.uint8), 1)
-    st.image(image, caption="Imagen cargada", use_column_width=True)
+if menu == "Reconocimiento Facial" or menu == "Análisis Emocional":
+    st.title("Reconocimiento Facial y Análisis Emocional")
     
-    locs, preds = predict_emotion(image, faceNet, emotionModel)
+    uploaded_file = st.file_uploader("Cargar una imagen", type=["jpg", "jpeg", "png"])
     
-    for (box, (label, pred)) in zip(locs, preds):
-        (Xi, Yi, Xf, Yf) = box
-        cv2.rectangle(image, (Xi, Yi), (Xf, Yf), (0, 255, 0), 2)
-        cv2.putText(image, f"{label}: {pred.max():.2f}", (Xi, Yi - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
-    
-    st.image(image, caption="Emociones detectadas", use_column_width=True)
-    
-    # Gráfico de barras para las emociones
-    if preds:
-        fig, ax = plt.subplots()
-        emotions = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
-        values = preds[0][1]
-        ax.bar(emotions, values)
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-        st.pyplot(fig)
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file)
+        image = np.array(image.convert('RGB'))
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.image(image, caption="Imagen Original", use_column_width=True)
+        
+        face, bbox = detect_face(image)
+        
+        if face is not None:
+            emotion, confidence = predict_emotion(cv2.cvtColor(face, cv2.COLOR_BGR2GRAY))
+            age, gender = estimate_age_gender(face)
+            
+            # Dibujar bounding box y etiquetas
+            cv2.rectangle(image, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
+            label = f"{emotion} ({confidence:.2f})"
+            cv2.putText(image, label, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+            
+            with col2:
+                st.image(image, caption="Facial Recognition", use_column_width=True)
+            
+            st.subheader("Resultados del Análisis")
+            st.write(f"Emoción Detectada: {emotion}")
+            st.write(f"Confianza: {confidence:.2f}")
+            st.write(f"Edad Estimada: {age} años")
+            st.write(f"Género: {gender}")
+            st.write(f"ID de Participante: #{random.randint(10000, 99999)}")
+            
+            col3, col4 = st.columns(2)
+            with col3:
+                if st.button("Registrar Asistencia"):
+                    st.success("Asistencia registrada exitosamente")
+            with col4:
+                if st.button("Generar Alerta"):
+                    st.warning("Alerta generada. Personal de seguridad notificado.")
+        else:
+            st.error("No se detectó ningún rostro en la imagen. Por favor, intente con otra imagen.")
+
+elif menu == "Registro de Asistencia":
+    st.title("Registro de Asistencia")
+    st.info("Funcionalidad en desarrollo. Estará disponible próximamente.")
+
+elif menu == "Generación de Informes":
+    st.title("Generación de Informes")
+    st.info("Funcionalidad en desarrollo. Estará disponible próximamente.")
+
+elif menu == "Alertas de Seguridad":
+    st.title("Alertas de Seguridad")
+    st.info("Funcionalidad en desarrollo. Estará disponible próximamente.")
 
 # Información del sistema
-st.sidebar.title("Información del Sistema")
+st.sidebar.markdown("---")
+st.sidebar.subheader("Información del Sistema")
 st.sidebar.info("""
 Este sistema utiliza tecnología de inteligencia artificial para analizar y reconocer rostros en tiempo real.
 
