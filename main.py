@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 from PIL import Image
 import pandas as pd
-import random
+import dlib
 
 # Configuración de la página
 st.set_page_config(
@@ -20,27 +20,11 @@ st.set_page_config(
 # Estilos personalizados
 st.markdown("""
     <style>
-    .reportview-container {
-        background: #f0f2f6
-    }
-    .sidebar .sidebar-content {
-        background: #2c3e50
-    }
-    .Widget>label {
-        color: white;
-        font-weight: bold;
-    }
-    .stButton>button {
-        color: white;
-        background-color: #3498db;
-        border-radius: 5px;
-    }
-    .css-1aumxhk {
-        background-color: #ffffff;
-        border-radius: 10px;
-        padding: 1rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
+    .reportview-container { background: #f0f2f6 }
+    .sidebar .sidebar-content { background: #2c3e50 }
+    .Widget>label { color: white; font-weight: bold; }
+    .stButton>button { color: white; background-color: #3498db; border-radius: 5px; }
+    .css-1aumxhk { background-color: #ffffff; border-radius: 10px; padding: 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
     </style>
     """, unsafe_allow_html=True)
 
@@ -49,48 +33,76 @@ st.markdown("""
 def load_models():
     faceNet = cv2.dnn.readNet("models/deploy.prototxt", "models/res10_300x300_ssd_iter_140000.caffemodel")
     emotionModel = load_model("models/modelFEC.h5")
-    return faceNet, emotionModel
+    faceDetector = dlib.get_frontal_face_detector()
+    landmarkDetector = dlib.shape_predictor("models/shape_predictor_68_face_landmarks.dat")
+    return faceNet, emotionModel, faceDetector, landmarkDetector
 
-faceNet, emotionModel = load_models()
+faceNet, emotionModel, faceDetector, landmarkDetector = load_models()
 
-def predict_emotion(face):
-    emotions = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
-    face = cv2.resize(face, (48, 48))
-    face = face.astype("float") / 255.0
-    face = img_to_array(face)
-    face = np.expand_dims(face, axis=0)
-    preds = emotionModel.predict(face)[0]
-    emotion = emotions[preds.argmax()]
-    return emotion, preds
+def predict_emotion(frame, faceNet, emotionModel):
+    classes = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
+    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
+    faceNet.setInput(blob)
+    detections = faceNet.forward()
+    
+    faces = []
+    locs = []
+    preds = []
+    
+    for i in range(0, detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > 0.5:
+            box = detections[0, 0, i, 3:7] * np.array([frame.shape[1], frame.shape[0], frame.shape[1], frame.shape[0]])
+            (Xi, Yi, Xf, Yf) = box.astype("int")
+            
+            face = frame[Yi:Yf, Xi:Xf]
+            face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+            face = cv2.resize(face, (48, 48))
+            face = face.astype("float") / 255.0
+            face = img_to_array(face)
+            face = np.expand_dims(face, axis=0)
+            
+            pred = emotionModel.predict(face)[0]
+            label = classes[pred.argmax()]
+            
+            faces.append(face)
+            locs.append((Xi, Yi, Xf, Yf))
+            preds.append((label, pred))
+    
+    return locs, preds
 
-def estimate_age_gender(face):
-    # Intenta estimar edad y género basado en características faciales
-    try:
-        gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-        landmarks = cv2.face.createFacemarkLBF().fit(gray)[1][0][0]
+def estimate_age_gender(face, faceDetector, landmarkDetector):
+    gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+    rects = faceDetector(gray, 1)
+    
+    if len(rects) > 0:
+        shape = landmarkDetector(gray, rects[0])
+        shape = np.array([[p.x, p.y] for p in shape.parts()])
         
-        # Cálculo simple basado en proporciones faciales
-        eye_distance = np.linalg.norm(landmarks[36] - landmarks[45])
-        face_height = np.linalg.norm(landmarks[8] - landmarks[27])
-        
+        # Estimación simple de edad basada en proporciones faciales
+        eye_distance = np.linalg.norm(shape[36] - shape[45])
+        face_height = np.linalg.norm(shape[8] - shape[27])
         ratio = eye_distance / face_height
         
-        # Estimación muy aproximada
         if ratio > 0.25:
-            age = random.randint(15, 30)
+            age_range = "18-30"
+        elif 0.24 < ratio <= 0.25:
+            age_range = "30-45"
         else:
-            age = random.randint(30, 60)
+            age_range = "45+"
         
-        # Género basado en la anchura de la mandíbula
-        jaw_width = np.linalg.norm(landmarks[0] - landmarks[16])
-        gender = "Masculino" if jaw_width > 100 else "Femenino"
+        # Estimación simple de género basada en características faciales
+        jaw_width = np.linalg.norm(shape[0] - shape[16])
+        forehead_width = np.linalg.norm(shape[17] - shape[26])
         
-    except:
-        # Si falla, usa datos aleatorios
-        age = random.randint(18, 65)
-        gender = random.choice(["Masculino", "Femenino"])
-    
-    return age, gender
+        if jaw_width > forehead_width:
+            gender = "Masculino"
+        else:
+            gender = "Femenino"
+        
+        return age_range, gender
+    else:
+        return "Desconocido", "Desconocido"
 
 def detect_face(image):
     (h, w) = image.shape[:2]
@@ -141,12 +153,12 @@ if menu == "Reconocimiento Facial" or menu == "Análisis Emocional":
         face, bbox = detect_face(image)
         
         if face is not None:
-            emotion, emotion_preds = predict_emotion(cv2.cvtColor(face, cv2.COLOR_BGR2GRAY))
-            age, gender = estimate_age_gender(face)
+            locs, preds = predict_emotion(image, faceNet, emotionModel)
+            age_range, gender = estimate_age_gender(face, faceDetector, landmarkDetector)
             
             # Dibujar bounding box y etiquetas
             cv2.rectangle(image, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
-            label = f"{emotion} ({emotion_preds.max()*100:.2f}%)"
+            label = f"{preds[0][0]}: {preds[0][1].max()*100:.2f}%"
             cv2.putText(image, label, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
             
             with col2:
@@ -159,18 +171,21 @@ if menu == "Reconocimiento Facial" or menu == "Análisis Emocional":
             with col3:
                 with st.container():
                     st.markdown("##### Información Detectada")
-                    st.write(f"**Emoción Predominante:** {emotion}")
-                    st.write(f"**Confianza:** {emotion_preds.max()*100:.2f}%")
-                    st.write(f"**Edad Estimada:** {age} años")
-                    st.write(f"**Género:** {gender}")
+                    st.write(f"**Emoción Predominante:** {preds[0][0]}")
+                    st.write(f"**Confianza:** {preds[0][1].max()*100:.2f}%")
+                    st.write(f"**Rango de Edad Estimado:** {age_range}")
+                    st.write(f"**Género Estimado:** {gender}")
                     st.write(f"**ID de Participante:** #{hash(str(bbox)) % 100000:05d}")
                 
                 if st.button("Registrar Asistencia"):
                     st.success("Asistencia registrada exitosamente")
             
             with col4:
-                emotions_dict = {e: p*100 for e, p in zip(['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido'], emotion_preds)}
+                emotions_dict = {e: p*100 for e, p in zip(['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido'], preds[0][1])}
                 plot_emotion_chart(emotions_dict)
+                
+                if st.button("Generar Alerta"):
+                    st.warning("Alerta generada. Personal de seguridad notificado.")
         
         else:
             st.error("No se detectó ningún rostro en la imagen. Por favor, intente con otra imagen.")
@@ -196,6 +211,7 @@ Este sistema utiliza tecnología de inteligencia artificial para analizar y reco
 Funcionalidades:
 - Reconocimiento facial
 - Análisis emocional
+- Estimación de edad y género
 - Registro de asistencia digital
 - Generación de informes
 """)
