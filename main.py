@@ -7,7 +7,6 @@ import os
 import matplotlib.pyplot as plt
 from PIL import Image
 import pandas as pd
-import dlib
 
 # Configuración de la página
 st.set_page_config(
@@ -33,11 +32,9 @@ st.markdown("""
 def load_models():
     faceNet = cv2.dnn.readNet("models/deploy.prototxt", "models/res10_300x300_ssd_iter_140000.caffemodel")
     emotionModel = load_model("models/modelFEC.h5")
-    faceDetector = dlib.get_frontal_face_detector()
-    landmarkDetector = dlib.shape_predictor("models/shape_predictor_68_face_landmarks.dat")
-    return faceNet, emotionModel, faceDetector, landmarkDetector
+    return faceNet, emotionModel
 
-faceNet, emotionModel, faceDetector, landmarkDetector = load_models()
+faceNet, emotionModel = load_models()
 
 def predict_emotion(frame, faceNet, emotionModel):
     classes = ['Enojado', 'Disgusto', 'Miedo', 'Feliz', 'Neutral', 'Triste', 'Sorprendido']
@@ -71,38 +68,44 @@ def predict_emotion(frame, faceNet, emotionModel):
     
     return locs, preds
 
-def estimate_age_gender(face, faceDetector, landmarkDetector):
+def estimate_age_gender(face):
+    # Convertir la imagen a escala de grises
     gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-    rects = faceDetector(gray, 1)
     
-    if len(rects) > 0:
-        shape = landmarkDetector(gray, rects[0])
-        shape = np.array([[p.x, p.y] for p in shape.parts()])
-        
-        # Estimación simple de edad basada en proporciones faciales
-        eye_distance = np.linalg.norm(shape[36] - shape[45])
-        face_height = np.linalg.norm(shape[8] - shape[27])
-        ratio = eye_distance / face_height
-        
-        if ratio > 0.25:
-            age_range = "18-30"
-        elif 0.24 < ratio <= 0.25:
-            age_range = "30-45"
-        else:
-            age_range = "45+"
-        
-        # Estimación simple de género basada en características faciales
-        jaw_width = np.linalg.norm(shape[0] - shape[16])
-        forehead_width = np.linalg.norm(shape[17] - shape[26])
-        
-        if jaw_width > forehead_width:
-            gender = "Masculino"
-        else:
-            gender = "Femenino"
-        
-        return age_range, gender
-    else:
+    # Detectar ojos
+    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+    eyes = eye_cascade.detectMultiScale(gray, 1.1, 4)
+    
+    # Detectar boca
+    mouth_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
+    mouth = mouth_cascade.detectMultiScale(gray, 1.5, 11)
+    
+    # Si no detectamos ojos o boca, retornamos valores por defecto
+    if len(eyes) == 0 or len(mouth) == 0:
         return "Desconocido", "Desconocido"
+    
+    # Calcular proporciones faciales
+    face_height, face_width = face.shape[:2]
+    eye_to_mouth_distance = abs(eyes[0][1] - mouth[0][1])
+    eye_distance = abs(eyes[0][0] - eyes[-1][0]) if len(eyes) > 1 else face_width // 3
+    
+    # Estimar edad basada en proporciones
+    age_ratio = eye_to_mouth_distance / face_height
+    if age_ratio > 0.48:
+        age_range = "Joven (18-30)"
+    elif 0.45 < age_ratio <= 0.48:
+        age_range = "Adulto (30-50)"
+    else:
+        age_range = "Mayor (50+)"
+    
+    # Estimar género basado en proporciones
+    gender_ratio = eye_distance / face_width
+    if gender_ratio > 0.25:
+        gender = "Femenino"
+    else:
+        gender = "Masculino"
+    
+    return age_range, gender
 
 def detect_face(image):
     (h, w) = image.shape[:2]
@@ -154,12 +157,13 @@ if menu == "Reconocimiento Facial" or menu == "Análisis Emocional":
         
         if face is not None:
             locs, preds = predict_emotion(image, faceNet, emotionModel)
-            age_range, gender = estimate_age_gender(face, faceDetector, landmarkDetector)
+            age_range, gender = estimate_age_gender(face)
             
             # Dibujar bounding box y etiquetas
             cv2.rectangle(image, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
             label = f"{preds[0][0]}: {preds[0][1].max()*100:.2f}%"
             cv2.putText(image, label, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+            cv2.putText(image, f"{age_range}, {gender}", (bbox[0], bbox[3] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
             
             with col2:
                 st.image(image, caption="Facial Recognition", use_column_width=True)

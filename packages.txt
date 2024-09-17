@@ -1,8 +1,5 @@
 cmake
-libgl1-mesa-glx
-libglib2.0-0
-libsm6
-libxext6
-libxrender-dev
-libxrender1
-libopencv-dev
+libx11-dev
+libatlas-base-dev
+libgtk-3-dev
+libboost-python-dev
